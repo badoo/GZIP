@@ -1,7 +1,7 @@
 //
 //  GZIP.m
 //
-//  Version 1.2.1
+//  Version 1.0.3
 //
 //  Created by Nick Lockwood on 03/06/2012.
 //  Copyright (C) 2012 Charcoal Design
@@ -31,53 +31,48 @@
 //
 
 
-#import "NSData+GZIP.h"
+#import "GZIP.h"
 #import <zlib.h>
 
 
-#pragma clang diagnostic ignored "-Wcast-qual"
+static const NSUInteger ChunkSize = 16384;
 
 
 @implementation NSData (GZIP)
 
 - (NSData *)gzippedDataWithCompressionLevel:(float)level
 {
-    if (self.length == 0 || [self isGzippedData])
+    if ([self length])
     {
-        return self;
-    }
-
-    z_stream stream;
-    stream.zalloc = Z_NULL;
-    stream.zfree = Z_NULL;
-    stream.opaque = Z_NULL;
-    stream.avail_in = (uint)self.length;
-    stream.next_in = (Bytef *)(void *)self.bytes;
-    stream.total_out = 0;
-    stream.avail_out = 0;
-
-    static const NSUInteger ChunkSize = 16384;
-
-    NSMutableData *output = nil;
-    int compression = (level < 0.0f)? Z_DEFAULT_COMPRESSION: (int)(roundf(level * 9));
-    if (deflateInit2(&stream, compression, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY) == Z_OK)
-    {
-        output = [NSMutableData dataWithLength:ChunkSize];
-        while (stream.avail_out == 0)
+        z_stream stream;
+        stream.zalloc = Z_NULL;
+        stream.zfree = Z_NULL;
+        stream.opaque = Z_NULL;
+        stream.avail_in = (uint)[self length];
+        stream.next_in = (Bytef *)[self bytes];
+        stream.total_out = 0;
+        stream.avail_out = 0;
+        
+        int compression = (level < 0.0f)? Z_DEFAULT_COMPRESSION: (int)(roundf(level * 9));
+        if (deflateInit2(&stream, compression, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY) == Z_OK)
         {
-            if (stream.total_out >= output.length)
+            NSMutableData *data = [NSMutableData dataWithLength:ChunkSize];
+            while (stream.avail_out == 0)
             {
-                output.length += ChunkSize;
+                if (stream.total_out >= [data length])
+                {
+                    data.length += ChunkSize;
+                }
+                stream.next_out = (uint8_t *)[data mutableBytes] + stream.total_out;
+                stream.avail_out = (uInt)([data length] - stream.total_out);
+                deflate(&stream, Z_FINISH);
             }
-            stream.next_out = (uint8_t *)output.mutableBytes + stream.total_out;
-            stream.avail_out = (uInt)(output.length - stream.total_out);
-            deflate(&stream, Z_FINISH);
+            deflateEnd(&stream);
+            data.length = stream.total_out;
+            return data;
         }
-        deflateEnd(&stream);
-        output.length = stream.total_out;
     }
-
-    return output;
+    return nil;
 }
 
 - (NSData *)gzippedData
@@ -87,50 +82,41 @@
 
 - (NSData *)gunzippedData
 {
-    if (self.length == 0 || ![self isGzippedData])
+    if ([self length])
     {
-        return self;
-    }
-
-    z_stream stream;
-    stream.zalloc = Z_NULL;
-    stream.zfree = Z_NULL;
-    stream.avail_in = (uint)self.length;
-    stream.next_in = (Bytef *)self.bytes;
-    stream.total_out = 0;
-    stream.avail_out = 0;
-
-    NSMutableData *output = nil;
-    if (inflateInit2(&stream, 47) == Z_OK)
-    {
-        int status = Z_OK;
-        output = [NSMutableData dataWithCapacity:self.length * 2];
-        while (status == Z_OK)
+        z_stream stream;
+        stream.zalloc = Z_NULL;
+        stream.zfree = Z_NULL;
+        stream.avail_in = (uint)[self length];
+        stream.next_in = (Bytef *)[self bytes];
+        stream.total_out = 0;
+        stream.avail_out = 0;
+        
+        NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)([self length] * 1.5)];
+        if (inflateInit2(&stream, 47) == Z_OK)
         {
-            if (stream.total_out >= output.length)
+            int status = Z_OK;
+            while (status == Z_OK)
             {
-                output.length += self.length / 2;
+                if (stream.total_out >= [data length])
+                {
+                    data.length += [self length] / 2;
+                }
+                stream.next_out = (uint8_t *)[data mutableBytes] + stream.total_out;
+                stream.avail_out = (uInt)([data length] - stream.total_out);
+                status = inflate (&stream, Z_SYNC_FLUSH);
             }
-            stream.next_out = (uint8_t *)output.mutableBytes + stream.total_out;
-            stream.avail_out = (uInt)(output.length - stream.total_out);
-            status = inflate (&stream, Z_SYNC_FLUSH);
-        }
-        if (inflateEnd(&stream) == Z_OK)
-        {
-            if (status == Z_STREAM_END)
+            if (inflateEnd(&stream) == Z_OK)
             {
-                output.length = stream.total_out;
+                if (status == Z_STREAM_END)
+                {
+                    data.length = stream.total_out;
+                    return data;
+                }
             }
         }
     }
-
-    return output;
-}
-
-- (BOOL)isGzippedData
-{
-    const UInt8 *bytes = (const UInt8 *)self.bytes;
-    return (self.length >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b);
+    return nil;
 }
 
 @end

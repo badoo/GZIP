@@ -1,7 +1,7 @@
 //
 //  GZIP.h
 //
-//  Version 1.2.1
+//  Version 1.0.3
 //
 //  Created by Nick Lockwood on 03/06/2012.
 //  Copyright (C) 2012 Charcoal Design
@@ -36,9 +36,8 @@
 
 @interface NSData (GZIP)
 
-- (nullable NSData *)gzippedDataWithCompressionLevel:(float)level;
-- (nullable NSData *)gzippedData;
-- (nullable NSData *)gunzippedData;
-- (BOOL)isGzippedData;
+- (NSData *)gzippedDataWithCompressionLevel:(float)level;
+- (NSData *)gzippedData;
+- (NSData *)gunzippedData;
 
 @end
